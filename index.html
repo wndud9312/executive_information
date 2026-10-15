@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BEXCO Executive Info Management</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <style>
+        /* 기본 레이아웃 및 폰트 설정 */
+        body { 
+            font-family: 'Malgun Gothic', sans-serif; 
+            margin: 0; padding: 20px; color: #333; background: #f4f7f6; 
+            font-size: 8pt; font-weight: bold; 
+        }
+        .container { 
+            max-width: 800px; margin: 0 auto; background: rgba(255, 255, 255, 0.98);
+            padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
+        }
+        
+        /* 제목 스타일 */
+        .main-header { 
+            font-size: 11.5pt; color: #00469b; margin-bottom: 25px;
+            display: flex; align-items: center; gap: 10px; font-weight: 900;
+            border-left: 5px solid #00469b; padding-left: 10px;
+            margin-left: 5px;
+        }
+
+        /* 임원 카드 그리드 */
+        .exec-grid { 
+            display: grid; grid-template-columns: 1fr 1fr; gap: 20px; 
+        }
+        
+        .exec-card {
+            background: #fff; border: 1px solid #ddd; border-radius: 12px;
+            padding: 15px; display: flex; align-items: center; gap: 15px;
+            transition: all 0.3s ease; position: relative; min-height: 155px; padding-top: 43px;
+        }
+
+        /* 상단 버튼 그룹 스타일 수정 */
+        .btn-group {
+            position: absolute; top: 10px; right: 10px;
+            display: flex; gap: 4px; z-index: 10; flex-wrap: wrap; justify-content: flex-end;
+        }
+
+        .btn-action {
+            background: #f0f2f5; border: none;
+            padding: 6px 8px; min-height: 26px; border-radius: 4px; white-space: nowrap;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 8pt; font-weight: 800; transition: 0.2s;
+        }
+        .btn-action:hover { background: #00469b; color: white; }
+
+        .photo-box {
+            width: 85px; height: 110px; 
+            background: #f1f3f5; border-radius: 8px; overflow: hidden; 
+            position: relative; border: 1px solid #eee; flex-shrink: 0;
+        }
+        .photo-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        
+        /* 사진 및 명함 편집 탭 오버레이 */
+        .photo-edit-tab {
+            position: absolute; width: 100%;
+            background: rgba(0, 70, 155, 0.9); color: white;
+            font-size: 7.5pt; text-align: center; padding: 4px 0;
+            cursor: pointer; display: none; font-weight: bold;
+        }
+        .photo-edit-tab.img-tab { bottom: 44px; border-bottom: 1px solid #ffffff40; }
+        .photo-edit-tab.pdf-tab { bottom: 22px; background: rgba(255, 71, 87, 0.9); }
+        
+        .editing-mode .photo-box:hover .photo-edit-tab { display: block; }
+        .photo-edit-tab.profile-tab { bottom: 0; background: rgba(31, 130, 89, 0.94); }
+        .memo-button { display:none; margin-top:9px; padding:6px 10px; border:1px solid #00469b; color:#00469b; background:#fff; border-radius:5px; cursor:pointer; font-weight:bold; align-self:flex-start; }
+        .editing-mode .memo-button { display:block; }
+        #memoModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:10001; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; }
+        .memo-dialog { background:#fff; border-radius:12px; padding:24px; width:min(440px,100%); box-sizing:border-box; box-shadow:0 10px 35px #0003; }
+        .memo-dialog textarea { width:100%; box-sizing:border-box; min-height:180px; resize:vertical; padding:12px; border:1px solid #ccc; border-radius:6px; font:12pt 'Malgun Gothic',sans-serif; }
+        .memo-dialog button { border:0; border-radius:5px; padding:10px 18px; cursor:pointer; font-weight:bold; }
+        @media(max-width:600px) { .exec-card { padding-top:53px; } .btn-action { font-size:7pt; padding:5px; } }
+
+        /* 정보 텍스트 스타일 */
+        .info-box { display: flex; flex-direction: column; flex-grow: 1; overflow: hidden; }
+        .role-text { font-size: 8pt; color: #00469b; font-weight: 900; margin-bottom: 3px; }
+        .kr-name { font-size: 11.5pt; font-weight: 900; color: #212529; margin-bottom: 2px; }
+        .en-name { font-size: 8.5pt; color: #4b4b4b; font-weight: bold; margin-bottom: 3px; }
+        .en-title { font-size: 7.5pt; color: #868e96; line-height: 1.3; word-break: keep-all; font-weight: normal; }
+
+        /* 편집 모드 시 시각적 표시 */
+        .editing-mode [contenteditable="true"] { 
+            background: #fffde7; outline: 1px solid #4a90e2; border-radius: 2px;
+        }
+
+        /* 관리자 버튼 */
+        .btn-admin-fixed { 
+            position: fixed; bottom: 20px; right: 20px; padding: 8px 15px;
+            background: #00469b; color: white; 
+            border: none; border-radius: 4px; cursor: pointer; 
+            font-size: 8pt; font-weight: 900;
+            z-index: 999;
+        }
+        .btn-admin-fixed.editing { background: #ff4757; }
+
+        /* 모달 스타일 */
+        #pwModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; }
+        .pw-box { background: white; padding: 25px; border-radius: 10px; text-align: center; width: 200px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .pw-box input { padding: 10px; width: 100%; box-sizing: border-box; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; text-align: center; font-size: 12pt; }
+        .pw-btn-group { display: flex; gap: 5px; }
+        .pw-btn-group button { flex: 1; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 8pt; font-weight: 900; }
+
+        @media (max-width: 600px) { .exec-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+    <div id="pwModal">
+        <div class="pw-box">
+            <div style="font-weight: 900; color: #00469b; font-size: 10pt;">관리자 인증</div>
+            <input type="password" id="pwInput" placeholder="••••" maxlength="4">
+            <div class="pw-btn-group">
+                <button style="background:#00469b; color:white;" onclick="checkPassword()">확인</button>
+                <button style="background:#666; color:white;" onclick="closeModal()">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" style="display:none;" accept="image/*">
+    <input type="file" id="pdfInput" style="display:none;" accept="application/pdf">
+    <input type="file" id="profileInput" style="display:none;" accept="application/pdf">
+    <div id="memoModal" role="dialog" aria-modal="true" aria-label="관리자 메모">
+      <div class="memo-dialog">
+        <h2 style="margin-top:0;color:#00469b">관리자 전용 메모</h2>
+        <div id="memoTarget" style="margin-bottom:10px"></div>
+        <textarea id="memoText" placeholder="임원 관련 메모를 입력하세요."></textarea>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+          <button onclick="closeMemo()">취소</button>
+          <button style="background:#00469b;color:white" onclick="saveMemo()">메모 저장</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="container" id="mainContainer">
+        <div class="main-header">🏢 BEXCO 임원 현황</div>
+        <div class="exec-grid" id="execContainer"></div>
+    </div>
+
+    <button class="btn-admin-fixed" onclick="handleEditClick()" id="editBtn">관리자</button>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBel3buc-ohyr50VgOzuQbxMygPNMov_-c",
+            authDomain: "calendar-for-bexco.firebaseapp.com",
+            databaseURL: "https://calendar-for-bexco-default-rtdb.firebaseio.com",
+            projectId: "calendar-for-bexco",
+            storageBucket: "calendar-for-bexco.firebasestorage.app",
+            messagingSenderId: "754391845767",
+            appId: "1:754391845767:web:ce4f5f89305d4288a3a122",
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        let isEditMode = false;
+        let currentTargetId = null;
+        let memoTargetId = null;
+        let latestData = {};
+        const execKeys = ['ceo', 'auditor', 'mgmt', 'mktg'];
+        
+        db.ref('exec_data_v4').on('value', (snapshot) => {
+            latestData = snapshot.val() || {};
+            render(latestData);
+        });
+
+        function render(data) {
+            const container = document.getElementById('execContainer');
+            container.innerHTML = '';
+            
+            execKeys.forEach(key => {
+                const item = data[key] || {};
+                const card = document.createElement('div');
+                card.className = 'exec-card';
+                
+                const safe = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+                card.innerHTML = `
+                    <div class="btn-group">
+                        <button class="btn-action" onclick="downloadFile('${key}', 'cardPdf')">명함 ⬇️</button>
+                        <button class="btn-action" onclick="downloadFile('${key}', 'photo')">사진 ⬇️</button>
+                        <button class="btn-action" onclick="downloadFile('${key}', 'profilePdf')">프로필 ⬇️</button>
+                    </div>
+                    <div class="photo-box">
+                        <img src="${item.photo || ''}" id="img-${key}" alt="${safe(item.krName || '임원')} 사진" crossorigin="anonymous" onerror="this.style.visibility='hidden'">
+                        <div class="photo-edit-tab img-tab" onclick="triggerUpload('${key}', 'image')">사진 변경</div>
+                        <div class="photo-edit-tab pdf-tab" onclick="triggerUpload('${key}', 'pdf')">명함 PDF 변경</div>
+                        <div class="photo-edit-tab profile-tab" onclick="triggerUpload('${key}', 'profile')">프로필 PDF 변경</div>
+                    </div>
+                    <div class="info-box">
+                        <div class="role-text" contenteditable="${isEditMode}" onblur="save('${key}', 'role', this.innerText)">${safe(item.role || '직함 입력')}</div>
+                        <div class="kr-name" contenteditable="${isEditMode}" onblur="save('${key}', 'krName', this.innerText)">${safe(item.krName || '성명')}</div>
+                        <div class="en-name" contenteditable="${isEditMode}" onblur="save('${key}', 'enName', this.innerText)">${safe(item.enName || 'Name')}</div>
+                        <div class="en-title" contenteditable="${isEditMode}" onblur="save('${key}', 'enTitle', this.innerText)">${safe(item.enTitle || 'English Title')}</div>
+                        <button class="memo-button" onclick="openMemo('${key}')">📝 메모</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function downloadFile(id, field) {
+            const item = latestData[id] || {};
+            const data = item[field];
+            const labels = {cardPdf:'명함',photo:'사진',profilePdf:'프로필'};
+            if (!data) { alert(`등록된 ${labels[field]} 파일이 없습니다.`); return; }
+            const name = (item.krName || '임원').replace(/[\\/:*?"<>|]/g, '_');
+            const ext = field === 'photo' ? ((data.match(/^data:image\/([a-zA-Z0-9+.-]+)/)||[])[1] || 'png').replace('jpeg','jpg') : 'pdf';
+            const link = document.createElement('a');
+            link.href = data;
+            link.download = `${labels[field]}_${name}.${ext}`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        }
+
+        function openMemo(id) {
+            if (!isEditMode) return;
+            memoTargetId = id;
+            document.getElementById('memoTarget').textContent = (latestData[id] || {}).krName || id;
+            document.getElementById('memoText').value = (latestData[id] || {}).adminMemo || '';
+            document.getElementById('memoModal').style.display = 'flex';
+        }
+        function closeMemo() {
+            document.getElementById('memoModal').style.display = 'none';
+            memoTargetId = null;
+            document.getElementById('memoText').value = '';
+        }
+        async function saveMemo() {
+            if (!isEditMode || !memoTargetId) return;
+            try {
+                await db.ref(`exec_data_v4/${memoTargetId}/adminMemo`).set(document.getElementById('memoText').value);
+                closeMemo();
+                alert('메모가 저장되었습니다.');
+            } catch (err) { alert('메모 저장 실패: ' + err.message); }
+        }
+
+        function handleEditClick() {
+            if (!isEditMode) {
+                document.getElementById('pwModal').style.display = 'flex';
+                document.getElementById('pwInput').focus();
+            } else {
+                isEditMode = false;
+                closeMemo();
+                updateUI();
+            }
+        }
+
+        function checkPassword() {
+            if (document.getElementById('pwInput').value === "0000") {
+                isEditMode = true;
+                closeModal();
+                updateUI();
+            } else {
+                alert("비밀번호가 틀렸습니다.");
+                document.getElementById('pwInput').value = "";
+            }
+        }
+
+        function closeModal() { document.getElementById('pwModal').style.display = 'none'; document.getElementById('pwInput').value = ""; }
+
+        function updateUI() {
+            const btn = document.getElementById('editBtn');
+            const container = document.getElementById('mainContainer');
+            if (isEditMode) { 
+                container.classList.add('editing-mode'); 
+                btn.innerText = "편집 완료"; 
+                btn.classList.add('editing'); 
+            } else { 
+                container.classList.remove('editing-mode'); 
+                btn.innerText = "관리자"; 
+                btn.classList.remove('editing'); 
+            }
+            render(latestData);
+        }
+
+        function save(id, field, value) {
+            if (!isEditMode) return;
+            db.ref(`exec_data_v4/${id}/${field}`).set(value.trim());
+        }
+
+        // 업로드 분기 처리 (이미지 / PDF)
+        function triggerUpload(id, type) { 
+            if (!isEditMode) return;
+            currentTargetId = id; 
+            if (type === 'image') {
+                document.getElementById('fileInput').click(); 
+            } else if (type === 'pdf') {
+                document.getElementById('pdfInput').click();
+            } else if (type === 'profile') {
+                document.getElementById('profileInput').click();
+            }
+        }
+
+        // 기존 이미지 업로드 이벤트 이벤트 핸들러
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                db.ref(`exec_data_v4/${currentTargetId}/photo`).set(event.target.result);
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // [새로 추가] 명함 PDF 업로드 이벤트 핸들러
+        document.getElementById('pdfInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            // 용량 제한 검사 (Firebase Realtime DB 문자열 제한 완화용, 보통 4~5MB 이하 권장)
+            if (file.size > 5 * 1024 * 1024) { 
+                alert("파일 크기는 5MB 이하만 가능합니다.");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                db.ref(`exec_data_v4/${currentTargetId}/cardPdf`).set(event.target.result)
+                    .then(() => alert("명함 PDF가 성공적으로 등록되었습니다."))
+                    .catch((err) => alert("업로드 실패: " + err.message));
+            };
+            reader.readAsDataURL(file);
+        });
+
+        document.getElementById('profileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const id = currentTargetId;
+            this.value = '';
+            if (!file || !isEditMode) return;
+            if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) { alert('PDF 파일만 등록할 수 있습니다.'); return; }
+            if (file.size > 5 * 1024 * 1024) { alert('PDF는 5MB 이하만 등록할 수 있습니다.'); return; }
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                try {
+                    await db.ref(`exec_data_v4/${id}/profilePdf`).set(event.target.result);
+                    alert('프로필 PDF가 등록되었습니다.');
+                } catch(err) { alert('프로필 등록 실패: ' + err.message); }
+            };
+            reader.readAsDataURL(file);
+        });
+
+        document.getElementById('pwInput').addEventListener('keypress', function(e) { if (e.key === 'Enter') checkPassword(); });
+    </script>
+</body>
+</html>
